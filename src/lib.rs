@@ -6,3 +6,4 @@ pub mod chunkkind;
 pub mod chunklist;
 pub mod quotelexer;
 pub mod stringvarlexer;
+pub mod error;
