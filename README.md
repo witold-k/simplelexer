@@ -6,9 +6,9 @@ The crate keeps slices into the original input instead of allocating token strin
 
 ## Components
 
-- `QuoteLexer` splits assignment-like text into code, whitespace, assignment operators, and quoted strings.
+- `QuoteLexer` splits assignment-like text into code, whitespace, assignments, other recognized operators, and quoted strings.
 - `StringVarLexer` splits string values while keeping nested `${...}` expressions intact.
-- `Chunk` stores token kind, source slice, and byte offsets.
+- `Chunk` stores token kind, source slice, and UTF-8 byte offsets into the original lexer input.
 - `ChunkList` is an owning, editable representation for collecting and replacing simple variable assignments while preserving surrounding text.
 
 ## Example
@@ -17,7 +17,7 @@ The crate keeps slices into the original input instead of allocating token strin
 use simplelexer::chunkkind::ChunkKind;
 use simplelexer::quotelexer::QuoteLexer;
 
-let mut lexer = QuoteLexer::new(r#"NAME = "value""#);
+let lexer = QuoteLexer::new(r#"NAME = "value""#);
 let chunks = lexer.lex();
 
 assert_eq!(chunks[0].kind, ChunkKind::Code);
@@ -38,7 +38,9 @@ assert_eq!(chunks[4].kind, ChunkKind::String);
 
 ## API model
 
-`QuoteLexer` and `StringVarLexer` return borrowed `Chunk<'a>` values. This keeps lexing allocation-free for token text and makes `Chunk::start` / `Chunk::end` meaningful byte offsets into the original UTF-8 input.
+`QuoteLexer` and `StringVarLexer` return borrowed `Chunk<'a>` values. This keeps lexing allocation-free for token text. Both lexers are reusable: calling `lex()` repeatedly returns the same result. `Chunk::start` / `Chunk::end` are UTF-8 byte offsets into the original input, including when `StringVarLexer` trims whitespace or matching outer quotes.
+
+`ChunkKind::Assignment` is reserved for assignment forms; comparison, arrow, increment/decrement, and related recognized operators are reported as `ChunkKind::Operator`.
 
 `ChunkList` deliberately owns its `OwnedChunk` strings. Editing therefore does not impose source-text lifetimes on replacement values. Use `ChunkList::from_text` to create an editable representation and `ChunkList::chunks` for read-only chunk access.
 
