@@ -22,7 +22,7 @@ let chunks = lexer.lex()?;
 
 assert_eq!(chunks[0].kind, ChunkKind::Code);
 assert_eq!(chunks[0].text, "NAME");
-assert_eq!(chunks[2].kind, ChunkKind::Assign);
+assert_eq!(chunks[2].kind, ChunkKind::Assignment);
 assert_eq!(chunks[4].kind, ChunkKind::String);
 ```
 
