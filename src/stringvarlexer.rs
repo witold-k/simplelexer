@@ -37,12 +37,21 @@ impl<'a> StringVarLexer<'a> {
         self.pos >= self.len
     }
 
-    fn peek(&self, n: usize) -> &'a str {
-        let end = std::cmp::min(self.pos + n, self.len);
-        &self.text[self.pos..end]
+    fn peek_char(&self) -> Option<char> {
+        self.text[self.pos..].chars().next()
     }
 
-    fn advance(&mut self, n: usize) {
+    fn starts_with(&self, value: &str) -> bool {
+        self.text[self.pos..].starts_with(value)
+    }
+
+    fn advance_char(&mut self) {
+        if let Some(ch) = self.peek_char() {
+            self.pos += ch.len_utf8();
+        }
+    }
+
+    fn advance_bytes(&mut self, n: usize) {
         self.pos += n;
     }
 
@@ -51,10 +60,10 @@ impl<'a> StringVarLexer<'a> {
 
         while !self.eof() {
             // 1. Whitespace verarbeiten
-            if self.peek(1).chars().next().is_some_and(|c| c.is_whitespace()) {
+            if self.starts_with.chars().next().is_some_and(|c| c.is_whitespace()) {
                 let start = self.pos;
-                while !self.eof() && self.peek(1).chars().next().is_some_and(|c| c.is_whitespace()) {
-                    self.advance(1);
+                while !self.eof() && self.starts_with.chars().next().is_some_and(|c| c.is_whitespace()) {
+                    self.advance_char();
                 }
                 chunks.push(Chunk {
                     kind: ChunkKind::Whitespace,
@@ -66,20 +75,20 @@ impl<'a> StringVarLexer<'a> {
             }
 
             // 2. BitBake Expression ${...} verschachtelt matchen
-            if self.peek(2) == "${" {
+            if self.starts_with == "${" {
                 let start = self.pos;
-                self.advance(2);
+                self.advance_bytes(2);
                 let mut bracket_level = 1;
 
                 while !self.eof() && bracket_level > 0 {
-                    if self.peek(2) == "${" {
+                    if self.starts_with == "${" {
                         bracket_level += 1;
-                        self.advance(2);
-                    } else if self.peek(1) == "}" {
+                        self.advance_bytes(2);
+                    } else if self.starts_with == "}" {
                         bracket_level -= 1;
-                        self.advance(1);
+                        self.advance_char();
                     } else {
-                        self.advance(1);
+                        self.advance_char();
                     }
                 }
                 chunks.push(Chunk {
@@ -94,10 +103,10 @@ impl<'a> StringVarLexer<'a> {
             // 3. Normale Wörter / Zeichen (Alles andere wird als STRING konsumiert)
             let start = self.pos;
             while !self.eof()
-                && !self.peek(1).chars().next().is_some_and(|c| c.is_whitespace())
-                && self.peek(2) != "${"
+                && !self.starts_with.chars().next().is_some_and(|c| c.is_whitespace())
+                && self.starts_with != "${"
             {
-                self.advance(1);
+                self.advance_char();
             }
             chunks.push(Chunk {
                 kind: ChunkKind::String,
