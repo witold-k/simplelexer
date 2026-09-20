@@ -34,3 +34,19 @@ fn unicode_input_keeps_valid_boundaries() {
     assert_eq!(chunks[2].text, "${WELT}");
     assert_eq!(chunks[4].text, "世界");
 }
+
+#[test]
+fn offsets_reference_original_input() {
+    let input = "  \"Grüße ${WELT}\"  ";
+    let lexer = StringVarLexer::new(input);
+    let chunks = lexer.lex();
+
+    assert_eq!(&input[chunks[0].start..chunks[0].end], "Grüße");
+    assert_eq!(&input[chunks[2].start..chunks[2].end], "${WELT}");
+}
+
+#[test]
+fn lex_is_repeatable() {
+    let lexer = StringVarLexer::new("\"foo ${BAR}\"");
+    assert_eq!(lexer.lex(), lexer.lex());
+}
