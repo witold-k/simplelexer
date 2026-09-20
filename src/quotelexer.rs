@@ -23,12 +23,21 @@ impl<'a> QuoteLexer<'a> {
         self.pos >= self.len
     }
 
-    fn peek(&self, n: usize) -> &'a str {
-        let end = std::cmp::min(self.pos + n, self.len);
-        &self.text[self.pos..end]
+    fn peek_char(&self) -> Option<char> {
+        self.text[self.pos..].chars().next()
     }
 
-    fn advance(&mut self, n: usize) {
+    fn starts_with(&self, value: &str) -> bool {
+        self.text[self.pos..].starts_with(value)
+    }
+
+    fn advance_char(&mut self) {
+        if let Some(ch) = self.peek_char() {
+            self.pos += ch.len_utf8();
+        }
+    }
+
+    fn advance_bytes(&mut self, n: usize) {
         self.pos += n;
     }
 
@@ -50,12 +59,12 @@ impl<'a> QuoteLexer<'a> {
 
         while !self.eof() {
             if in_string {
-                if self.peek(2) == "\\\"" {
-                    self.advance(2);
+                if self.starts_with == "\\\"" {
+                    self.advance_bytes(2);
                     continue;
                 }
-                if self.peek(1) == "\"" {
-                    self.advance(1);
+                if self.starts_with == "\"" {
+                    self.advance_char();
                     chunks.push(Chunk {
                         kind: ChunkKind::String,
                         text: &self.text[start..self.pos],
@@ -66,25 +75,25 @@ impl<'a> QuoteLexer<'a> {
                     in_string = false;
                     continue;
                 }
-                self.advance(1);
+                self.advance_char();
                 continue;
             }
 
-            if self.peek(1) == "\"" {
+            if self.starts_with == "\"" {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                 in_string = true;
                 start = self.pos;
-                self.advance(1);
+                self.advance_char();
                 continue;
             }
 
-            let next_3 = self.peek(3);
+            let next_3 = self.starts_with;
             match next_3 {
                 // 3-Zeichen-Operatoren
                 "<<=" | ">>=" | "<=>" | "||=" | "&&=" | "??=" | "**=" | "::=" | "..." | "|||" | "&&&" => {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                     let op_start = self.pos;
-                    self.advance(3);
+                    self.advance_bytes(3);
                     chunks.push(Chunk::<'a> {
                         kind: ChunkKind::Assign,
                         text: &self.text[op_start..self.pos],
@@ -97,7 +106,7 @@ impl<'a> QuoteLexer<'a> {
                 _ => {}
             }
 
-            let next_2 = self.peek(2);
+            let next_2 = self.starts_with;
             match next_2 {
                 // 2-Zeichen-Operatoren
                 ":=" | "?=" | "+=" | "-=" | "=-" | "=+" | ".=" | "=." |
@@ -107,7 +116,7 @@ impl<'a> QuoteLexer<'a> {
                 "**" | "::" | ".." => {
                     Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                     let op_start = self.pos;
-                    self.advance(2);
+                    self.advance_bytes(2);
                     chunks.push(Chunk::<'a> {
                         kind: ChunkKind::Assign,
                         text: &self.text[op_start..self.pos],
@@ -120,10 +129,10 @@ impl<'a> QuoteLexer<'a> {
                 _ => {}
             }
 
-            if self.peek(1) == "=" {
+            if self.starts_with == "=" {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                 let op_start = self.pos;
-                self.advance(1);
+                self.advance_char();
                 chunks.push(Chunk::<'a> {
                     kind: ChunkKind::Assign,
                     text: &self.text[op_start..self.pos],
@@ -135,11 +144,11 @@ impl<'a> QuoteLexer<'a> {
             }
 
             // Prüft das erste Zeichen auf Whitespace (ASCII-kompatibel)
-            if self.peek(1).chars().next().is_some_and(|c| c.is_whitespace()) {
+            if self.starts_with.chars().next().is_some_and(|c| c.is_whitespace()) {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                 let ws_start = self.pos;
-                while !self.eof() && self.peek(1).chars().next().is_some_and(|c| c.is_whitespace()) {
-                    self.advance(1);
+                while !self.eof() && self.starts_with.chars().next().is_some_and(|c| c.is_whitespace()) {
+                    self.advance_char();
                 }
                 chunks.push(Chunk::<'a> {
                     kind: ChunkKind::Whitespace,
@@ -152,7 +161,7 @@ impl<'a> QuoteLexer<'a> {
             }
 
             // Alles andere wird als CODE-Teil konsumiert
-            self.advance(1);
+            self.advance_char();
         }
 
         if start < self.len {
