@@ -3,6 +3,7 @@
 
 use crate::chunk::Chunk;
 use crate::chunkkind::ChunkKind;
+use crate::error::{LexError, LexErrorKind, Result};
 
 #[derive(Debug, Clone, Copy)]
 pub struct StringVarLexer<'a> {
@@ -24,7 +25,7 @@ impl<'a> StringVarLexer<'a> {
         Self { text, offset }
     }
 
-    pub fn lex(&self) -> Vec<Chunk<'a>> {
+    pub fn lex(&self) -> Result<Vec<Chunk<'a>>> {
         let mut chunks = Vec::new();
         let mut pos = 0;
 
@@ -64,6 +65,13 @@ impl<'a> StringVarLexer<'a> {
                     }
                 }
 
+                if level != 0 {
+                    return Err(LexError::new(
+                        LexErrorKind::UnterminatedVariableExpression,
+                        self.offset + start,
+                    ));
+                }
+
                 chunks.push(self.chunk(ChunkKind::String, start, pos));
                 continue;
             }
@@ -81,7 +89,7 @@ impl<'a> StringVarLexer<'a> {
             chunks.push(self.chunk(ChunkKind::String, start, pos));
         }
 
-        chunks
+        Ok(chunks)
     }
 
     fn chunk(&self, kind: ChunkKind, start: usize, end: usize) -> Chunk<'a> {
