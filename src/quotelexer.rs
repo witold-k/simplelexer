@@ -3,6 +3,7 @@
 
 use crate::chunk::Chunk;
 use crate::chunkkind::ChunkKind;
+use crate::error::{LexError, LexErrorKind, Result};
 
 const ASSIGNMENTS: [&str; 17] = [
     "<<=", ">>=", "||=", "&&=", "??=", "**=", "::=", ":=", "?=", "+=", "-=", "=-", "=+", ".=",
@@ -26,7 +27,7 @@ impl<'a> QuoteLexer<'a> {
         Self { text }
     }
 
-    pub fn lex(&self) -> Vec<Chunk<'a>> {
+    pub fn lex(&self) -> Result<Vec<Chunk<'a>>> {
         let mut chunks = Vec::new();
         let mut pos = 0;
         let mut start = 0;
@@ -81,14 +82,6 @@ impl<'a> QuoteLexer<'a> {
                 continue;
             }
 
-            if rest.starts_with('=') {
-                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
-                chunks.push(Chunk::new(ChunkKind::Assignment, "=", pos, pos + 1));
-                pos += 1;
-                start = pos;
-                continue;
-            }
-
             if let Some(op) = longest_match(rest, &OPERATORS) {
                 push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
                 let op_start = pos;
@@ -99,6 +92,14 @@ impl<'a> QuoteLexer<'a> {
                     op_start,
                     pos,
                 ));
+                start = pos;
+                continue;
+            }
+
+            if rest.starts_with('=') {
+                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
+                chunks.push(Chunk::new(ChunkKind::Assignment, "=", pos, pos + 1));
+                pos += 1;
                 start = pos;
                 continue;
             }
@@ -129,16 +130,21 @@ impl<'a> QuoteLexer<'a> {
             pos += next_char_len(rest);
         }
 
-        if start < self.text.len() {
-            let kind = if in_string {
-                ChunkKind::String
-            } else {
-                ChunkKind::Code
-            };
-            push_chunk(&mut chunks, kind, self.text, start, self.text.len());
+        if in_string {
+            return Err(LexError::new(LexErrorKind::UnterminatedString, start));
         }
 
-        chunks
+        if start < self.text.len() {
+            push_chunk(
+                &mut chunks,
+                ChunkKind::Code,
+                self.text,
+                start,
+                self.text.len(),
+            );
+        }
+
+        Ok(chunks)
     }
 }
 
