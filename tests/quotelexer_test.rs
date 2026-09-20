@@ -11,7 +11,7 @@ fn make_chunk_list(text: &str) -> ChunkList {
 }
 
 fn lex(text: &str) -> Vec<Chunk<'_>> {
-    let mut lexer = QuoteLexer::new(text);
+    let lexer = QuoteLexer::new(text);
     lexer.lex()
 }
 
