@@ -29,7 +29,7 @@ fn code_then_string() {
         vec![
             Chunk::new(ChunkKind::Code, "FOO", 0, 3),
             Chunk::new(ChunkKind::Whitespace, " ", 3, 4),
-            Chunk::new(ChunkKind::Assign, "=", 4, 5),
+            Chunk::new(ChunkKind::Assignment, "=", 4, 5),
             Chunk::new(ChunkKind::Whitespace, " ", 5, 6),
             Chunk::new(ChunkKind::String, "\"bar\"", 6, 11),
         ]
@@ -120,4 +120,19 @@ fn replace_value_appends_missing_assignment() {
     assert!(!cl.replace_value("second", "\"2\""));
 
     assert_eq!(cl.to_string(), "first = \"1\"\nsecond = \"2\"");
+}
+
+#[test]
+fn comparison_is_operator_not_assignment() {
+    let lexer = QuoteLexer::new("left == right");
+    let chunks = lexer.lex();
+
+    assert_eq!(chunks[2].kind, ChunkKind::Operator);
+    assert_eq!(chunks[2].text, "==");
+}
+
+#[test]
+fn lex_is_repeatable() {
+    let lexer = QuoteLexer::new("A = \"1\"");
+    assert_eq!(lexer.lex(), lexer.lex());
 }
