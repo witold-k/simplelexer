@@ -1,190 +1,156 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Witold Kaminski
 
-use std::collections::HashSet;
-use std::collections::HashMap;
-use crate::chunk::Chunk;
+use std::collections::{HashMap, HashSet};
+
 use crate::chunkkind::ChunkKind;
 use crate::quotelexer::QuoteLexer;
 
-
-#[derive(Debug, Clone, Default)]
-pub struct ChunkList<'a> {
-    pub chunks: Vec<Chunk<'a>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedChunk {
+    pub kind: ChunkKind,
+    pub text: String,
 }
 
-impl<'a> ChunkList<'a> {
+impl OwnedChunk {
+    pub fn new(kind: ChunkKind, text: impl Into<String>) -> Self {
+        Self {
+            kind,
+            text: text.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChunkList {
+    chunks: Vec<OwnedChunk>,
+}
+
+impl ChunkList {
     pub fn new() -> Self {
-        Self { chunks: Vec::new() }
+        Self::default()
     }
 
-    // staticmethod equivalent
-    pub fn from_text(text: &'a str) -> Self {
+    pub fn from_text(text: &str) -> Self {
         let mut lexer = QuoteLexer::new(text);
-        // Wir konvertieren hier die Slices des Lexers in eigene Strings
-        let chunks = lexer.lex().into_iter().map(|c| Chunk {
-            kind: c.kind,
-            text: c.text,
-            start: c.start,
-            end: c.end,
-        }).collect();
+        let chunks = lexer
+            .lex()
+            .into_iter()
+            .map(|chunk| OwnedChunk::new(chunk.kind, chunk.text))
+            .collect();
 
         Self { chunks }
     }
 
-    pub fn replace_val_at_begin(&mut self, name: &'a str, value: &'a str) {
-        let mut target_idx = None;
+    pub fn chunks(&self) -> &[OwnedChunk] {
+        &self.chunks
+    }
 
-        // 1. Suche nach ChunkKind::Code mit dem Namen
-        for (i, chunk) in self.chunks.iter().enumerate() {
-            if chunk.kind == ChunkKind::Code && chunk.text == name {
-                target_idx = Some(i);
-                break;
-            }
-        }
-
-        // 2. Wenn nicht gefunden, anhängen und beenden
-        let target_idx = match target_idx {
-            None => {
-                if let Some(last) = self.chunks.last()
-                    && (last.kind != ChunkKind::Whitespace || !last.text.contains('\n')) {
-                    self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, "\n", 0, 1));
-                }
-                self.chunks.push(Chunk::<'a>::new(ChunkKind::Code, name, 0, name.len()));
-                self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, " ", 0, 1));
-                self.chunks.push(Chunk::<'a>::new(ChunkKind::Assign, "=", 0, 1));
-                self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, " ", 0, 1));
-                self.chunks.push(Chunk::<'a>::new(ChunkKind::String, value, 0, value.len()));
-                return;
-            }
-            Some(idx) => idx,
+    pub fn replace_value(&mut self, name: &str, value: &str) -> bool {
+        let Some(name_idx) = self
+            .chunks
+            .iter()
+            .position(|chunk| chunk.kind == ChunkKind::Code && chunk.text.trim() == name)
+        else {
+            self.append_assignment(name, value);
+            return false;
         };
 
-        // 3. Sequenz validieren: (WHITESPACE)* ASSIGN (WHITESPACE)*
-        let mut cursor = target_idx + 1;
-
-        while cursor < self.chunks.len() && self.chunks[cursor].kind == ChunkKind::Whitespace {
-            cursor += 1;
+        let Some(assign_idx) = self.next_non_whitespace(name_idx + 1) else {
+            self.append_assignment(name, value);
+            return false;
+        };
+        if self.chunks[assign_idx].kind != ChunkKind::Assign {
+            self.append_assignment(name, value);
+            return false;
         }
 
-        if cursor >= self.chunks.len() || self.chunks[cursor].kind != ChunkKind::Assign {
-            // Rekursiver Fallback (In Rust über Schleife gelöst, um Borrow-Checker-Konflikte zu umgehen)
-            // Wir simulieren das Python-Verhalten, indem wir das Element löschen und neu anhängen
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, "\n", 0, 1));
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::Code, name, 0, name.len()));
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, " ", 0, 1));
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::Assign, "=", 0, 1));
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, " ", 0, 1));
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::String, value, 0, value.len()));
-            return;
+        let Some(value_idx) = self.next_non_whitespace(assign_idx + 1) else {
+            self.append_assignment(name, value);
+            return false;
+        };
+        if self.chunks[value_idx].kind != ChunkKind::String {
+            self.append_assignment(name, value);
+            return false;
         }
 
-        cursor += 1; // Weiter nach ASSIGN
-
-        while cursor < self.chunks.len() && self.chunks[cursor].kind == ChunkKind::Whitespace {
-            cursor += 1;
-        }
-
-        // 4. Folgendes ChunkKind::String ersetzen oder anhängen
-        if cursor < self.chunks.len() && self.chunks[cursor].kind == ChunkKind::String {
-            self.chunks[cursor].text = value;
-        } else {
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::String, value, 0, value.len()));
-            self.chunks.push(Chunk::<'a>::new(ChunkKind::Whitespace, "\n", 0, 1));
-        }
+        self.chunks[value_idx].text = value.to_owned();
+        true
     }
 
     pub fn collect_simple_vars(&self, var_names: &[&str]) -> HashMap<String, String> {
-        let mut result = HashMap::<String, String>::new();
-        let allowed_names: HashSet<&str> = var_names.iter().cloned().collect();
-        let num_chunks = self.chunks.len();
+        let allowed_names: HashSet<&str> = var_names.iter().copied().collect();
+        let mut result = HashMap::new();
 
-        for i in 0..num_chunks {
-            let chunk = &self.chunks[i];
-            let trimmed_name = chunk.text.trim();
-            if chunk.kind != ChunkKind::Code || !allowed_names.contains(trimmed_name) {
+        for (index, chunk) in self.chunks.iter().enumerate() {
+            let name = chunk.text.trim();
+            if chunk.kind != ChunkKind::Code || !allowed_names.contains(name) {
                 continue;
             }
 
-            let mut idx = i + 1;
-            while idx < num_chunks && self.chunks[idx].kind == ChunkKind::Whitespace {
-                idx += 1;
-            }
-
-            if idx >= num_chunks || self.chunks[idx].kind != ChunkKind::Assign {
+            let Some(assign_idx) = self.next_non_whitespace(index + 1) else {
+                continue;
+            };
+            if self.chunks[assign_idx].kind != ChunkKind::Assign {
                 continue;
             }
-            idx += 1;
 
-            while idx < num_chunks && self.chunks[idx].kind == ChunkKind::Whitespace {
-                idx += 1;
-            }
-
-            if idx < num_chunks && self.chunks[idx].kind == ChunkKind::String {
-                result.insert(trimmed_name.to_string(), self.chunks[idx].text.to_string());
+            let Some(value_idx) = self.next_non_whitespace(assign_idx + 1) else {
+                continue;
+            };
+            if self.chunks[value_idx].kind == ChunkKind::String {
+                result.insert(name.to_owned(), self.chunks[value_idx].text.clone());
             }
         }
+
         result
     }
 
     pub fn collect_combined_vars(&self, var_names: &[&str]) -> HashMap<String, String> {
-        let mut result: HashMap<String, String> = HashMap::new();
-        let allowed_names: HashSet<&str> = var_names.iter().cloned().collect();
-        let num_chunks = self.chunks.len();
+        let allowed_names: HashSet<&str> = var_names.iter().copied().collect();
+        let mut result = HashMap::<String, String>::new();
 
-        for i in 0..num_chunks {
-            let chunk = &self.chunks[i];
-            let trimmed_name = chunk.text.trim();
-            if chunk.kind != ChunkKind::Code || !allowed_names.contains(trimmed_name) {
+        for (index, chunk) in self.chunks.iter().enumerate() {
+            let name = chunk.text.trim();
+            if chunk.kind != ChunkKind::Code || !allowed_names.contains(name) {
                 continue;
             }
 
-            let mut idx = i + 1;
-            while idx < num_chunks && self.chunks[idx].kind == ChunkKind::Whitespace {
-                idx += 1;
-            }
-
-            if idx >= num_chunks || self.chunks[idx].kind != ChunkKind::Assign {
+            let Some(assign_idx) = self.next_non_whitespace(index + 1) else {
+                continue;
+            };
+            if self.chunks[assign_idx].kind != ChunkKind::Assign {
                 continue;
             }
-            let op = self.chunks[idx].text.trim();
-            idx += 1;
 
-            while idx < num_chunks && self.chunks[idx].kind == ChunkKind::Whitespace {
-                idx += 1;
+            let Some(value_idx) = self.next_non_whitespace(assign_idx + 1) else {
+                continue;
+            };
+            if self.chunks[value_idx].kind != ChunkKind::String {
+                continue;
             }
 
-            if idx < num_chunks && self.chunks[idx].kind == ChunkKind::String {
-                let raw_val: &str = self.chunks[idx].text;
-                let mut val_content = raw_val;
+            let op = self.chunks[assign_idx].text.as_str();
+            let value = strip_matching_quotes(&self.chunks[value_idx].text);
+            let current = result.get(name).map(String::as_str).unwrap_or("");
 
-                // Quotes entfernen analog zu Python
-                if raw_val.len() >= 2 {
-                    let first = raw_val.as_bytes()[0];
-                    let last = raw_val.as_bytes()[raw_val.len() - 1];
-                    if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
-                        val_content = &raw_val[1..raw_val.len() - 1];
-                    }
-                }
+            let combined = match op {
+                "=" | ":=" | "?=" => value.to_owned(),
+                "+=" => format!("{current}{value}"),
+                "=+" => format!("{value}{current}"),
+                "-=" | "=-" => current.replace(value, ""),
+                _ => continue,
+            };
 
-                let current_content = result.get(trimmed_name).cloned().unwrap_or_default();
-                let new_content = match op {
-                    "?=" | ":=" | "=" => val_content.to_string(),
-                    "+=" => format!("{}{}", current_content, val_content),
-                    "=+" => format!("{}{}", val_content, current_content),
-                    "-=" | "=-" => current_content.replace(val_content, ""),
-                    _ => continue,
-                };
-
-                result.insert(trimmed_name.to_string(), new_content);
-            }
+            result.insert(name.to_owned(), combined);
         }
 
-        // Am Ende alle Values in Anführungszeichen setzen f'"{val}"'
-        result.into_iter().map(|(k, v)| (k, format!("\"{}\"", v))).collect()
+        result
+            .into_iter()
+            .map(|(name, value)| (name, format!("\"{value}\"")))
+            .collect()
     }
 
-    // Helper für die Python-Len- und Index-Methoden
     pub fn len(&self) -> usize {
         self.chunks.len()
     }
@@ -192,21 +158,66 @@ impl<'a> ChunkList<'a> {
     pub fn is_empty(&self) -> bool {
         self.chunks.is_empty()
     }
+
+    fn next_non_whitespace(&self, mut index: usize) -> Option<usize> {
+        while self
+            .chunks
+            .get(index)
+            .is_some_and(|chunk| chunk.kind == ChunkKind::Whitespace)
+        {
+            index += 1;
+        }
+        (index < self.chunks.len()).then_some(index)
+    }
+
+    fn append_assignment(&mut self, name: &str, value: &str) {
+        if self
+            .chunks
+            .last()
+            .is_some_and(|chunk| chunk.kind != ChunkKind::Whitespace || !chunk.text.contains('\n'))
+        {
+            self.chunks
+                .push(OwnedChunk::new(ChunkKind::Whitespace, "\n"));
+        }
+
+        self.chunks.extend([
+            OwnedChunk::new(ChunkKind::Code, name),
+            OwnedChunk::new(ChunkKind::Whitespace, " "),
+            OwnedChunk::new(ChunkKind::Assign, "="),
+            OwnedChunk::new(ChunkKind::Whitespace, " "),
+            OwnedChunk::new(ChunkKind::String, value),
+        ]);
+    }
 }
 
-// Indexierung wie `list[idx]` in Python
-impl<'a> std::ops::Index<usize> for ChunkList<'a> {
-    type Output = Chunk<'a>;
+fn strip_matching_quotes(value: &str) -> &str {
+    if value.len() < 2 {
+        return value;
+    }
+
+    let bytes = value.as_bytes();
+    let quoted = matches!((bytes[0], bytes[value.len() - 1]), (b'"', b'"') | (b'\'', b'\''));
+
+    if quoted {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
+}
+
+impl std::ops::Index<usize> for ChunkList {
+    type Output = OwnedChunk;
+
     fn index(&self, index: usize) -> &Self::Output {
         &self.chunks[index]
     }
 }
 
-// String-Zusammenfassung via `ToString` bzw. `fmt::Display`
-impl<'a> std::fmt::Display for ChunkList<'a> {
+impl std::fmt::Display for ChunkList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let combined: String = self.chunks.iter().map(|ch| ch.text).collect();
-        write!(f, "{}", combined)
+        for chunk in &self.chunks {
+            f.write_str(&chunk.text)?;
+        }
+        Ok(())
     }
 }
-
