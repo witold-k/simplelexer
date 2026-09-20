@@ -6,11 +6,8 @@ use simplelexer::chunkkind::ChunkKind;
 use simplelexer::chunklist::ChunkList;
 use simplelexer::quotelexer::QuoteLexer;
 
-fn make_chunk_list(text: &str) -> ChunkList<'_> {
-    let mut lexer = QuoteLexer::new(text);
-    ChunkList {
-        chunks: lexer.lex(),
-    }
+fn make_chunk_list(text: &str) -> ChunkList {
+    ChunkList::from_text(text)
 }
 
 fn lex(text: &str) -> Vec<Chunk<'_>> {
@@ -74,7 +71,7 @@ fn collect_simple_vars() {
 #[test]
 fn replace_val_at_begin() {
     let mut cl = make_chunk_list("username = \"old_user\"\npassword = \"old_password\"");
-    cl.replace_val_at_begin("username", "\"new_user\"");
+    assert!(cl.replace_value("username", "\"new_user\""));
 
     let txt = cl.to_string();
     assert!(txt.contains("\"new_user\""));
@@ -103,4 +100,24 @@ fn collect_combined_vars_remove() {
     let res = cl.collect_combined_vars(&["var"]);
 
     assert_eq!(res["var"], "\"abef\"");
+}
+
+#[test]
+fn replace_value_accepts_short_lived_input() {
+    let mut cl = ChunkList::from_text("name = \"old\"");
+
+    {
+        let value = String::from("\"new\"");
+        assert!(cl.replace_value("name", &value));
+    }
+
+    assert_eq!(cl.to_string(), "name = \"new\"");
+}
+
+#[test]
+fn replace_value_appends_missing_assignment() {
+    let mut cl = ChunkList::from_text("first = \"1\"");
+    assert!(!cl.replace_value("second", "\"2\""));
+
+    assert_eq!(cl.to_string(), "first = \"1\"\nsecond = \"2\"");
 }
