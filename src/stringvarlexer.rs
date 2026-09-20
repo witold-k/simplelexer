@@ -9,6 +9,7 @@ use crate::error::{LexError, LexErrorKind, Result};
 pub struct StringVarLexer<'a> {
     text: &'a str,
     offset: usize,
+    unterminated_quote: bool,
 }
 
 impl<'a> StringVarLexer<'a> {
@@ -16,16 +17,29 @@ impl<'a> StringVarLexer<'a> {
         let trimmed = input.trim();
         let leading = input.len() - input.trim_start().len();
 
-        let (text, offset) = if has_matching_outer_quotes(trimmed) {
+        let first = trimmed.chars().next();
+        let last = trimmed.chars().next_back();
+        let starts_with_quote = first.is_some_and(|ch| matches!(ch, '"' | '\''));
+        let matching_quotes = has_matching_outer_quotes(trimmed);
+
+        let (text, offset) = if matching_quotes {
             (&trimmed[1..trimmed.len() - 1], leading + 1)
         } else {
             (trimmed, leading)
         };
 
-        Self { text, offset }
+        Self {
+            text,
+            offset,
+            unterminated_quote: starts_with_quote && first != last,
+        }
     }
 
     pub fn lex(&self) -> Result<Vec<Chunk<'a>>> {
+        if self.unterminated_quote {
+            return Err(LexError::new(LexErrorKind::UnterminatedString, self.offset));
+        }
+
         let mut chunks = Vec::new();
         let mut pos = 0;
 
