@@ -4,175 +4,164 @@
 use crate::chunk::Chunk;
 use crate::chunkkind::ChunkKind;
 
+const ASSIGNMENTS: [&str; 17] = [
+    "<<=", ">>=", "||=", "&&=", "??=", "**=", "::=", ":=", "?=", "+=", "-=", "=-", "=+", ".=",
+    "=.", "*=", "/=",
+];
+
+const MORE_ASSIGNMENTS: [&str; 7] = ["%=", "&=", "|=", "^=", "~=", "=:=", "=@"];
+
+const OPERATORS: [&str; 21] = [
+    "<=>", "...", "|||", "^^=", "==", "!=", "<=", ">=", "~~", "!~", "<>", "&&", "||", "=>", "->",
+    "<-", "<~", "~>", "++", "--", "::",
+];
+
+#[derive(Debug, Clone, Copy)]
 pub struct QuoteLexer<'a> {
     text: &'a str,
-    pos: usize,
-    len: usize,
 }
 
 impl<'a> QuoteLexer<'a> {
-    pub fn new(text: &'a str) -> Self {
-        Self {
-            text,
-            pos: 0,
-            len: text.len(),
-        }
+    pub const fn new(text: &'a str) -> Self {
+        Self { text }
     }
 
-    fn eof(&self) -> bool {
-        self.pos >= self.len
-    }
-
-    fn peek_char(&self) -> Option<char> {
-        self.text[self.pos..].chars().next()
-    }
-
-    fn starts_with(&self, value: &str) -> bool {
-        self.text[self.pos..].starts_with(value)
-    }
-
-    fn advance_char(&mut self) {
-        if let Some(ch) = self.peek_char() {
-            self.pos += ch.len_utf8();
-        }
-    }
-
-    fn advance_bytes(&mut self, n: usize) {
-        self.pos += n;
-    }
-
-    fn flush_code_chunk(chunks: &mut Vec<Chunk<'a>>, s_pos: usize, e_pos: usize, text: &'a str) {
-        if e_pos > s_pos {
-            chunks.push(Chunk::<'a> {
-                kind: ChunkKind::Code,
-                text: &text[s_pos..e_pos],
-                start: s_pos,
-                end: e_pos,
-            });
-        }
-    }
-
-    pub fn lex(&mut self) -> Vec<Chunk<'a>> {
+    pub fn lex(&self) -> Vec<Chunk<'a>> {
         let mut chunks = Vec::new();
+        let mut pos = 0;
         let mut start = 0;
         let mut in_string = false;
 
-        while !self.eof() {
+        while pos < self.text.len() {
+            let rest = &self.text[pos..];
+
             if in_string {
-                if self.starts_with("\\\"") {
-                    self.advance_bytes(2);
+                if rest.starts_with("\\\"") {
+                    pos += 2;
                     continue;
                 }
-                if self.starts_with("\"") {
-                    self.advance_char();
-                    chunks.push(Chunk {
-                        kind: ChunkKind::String,
-                        text: &self.text[start..self.pos],
+                if rest.starts_with('"') {
+                    pos += 1;
+                    chunks.push(Chunk::new(
+                        ChunkKind::String,
+                        &self.text[start..pos],
                         start,
-                        end: self.pos,
-                    });
-                    start = self.pos;
+                        pos,
+                    ));
+                    start = pos;
                     in_string = false;
                     continue;
                 }
-                self.advance_char();
+
+                pos += next_char_len(rest);
                 continue;
             }
 
-            if self.starts_with("\"") {
-                Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
+            if rest.starts_with('"') {
+                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
                 in_string = true;
-                start = self.pos;
-                self.advance_char();
+                start = pos;
+                pos += 1;
                 continue;
             }
 
-            const ASSIGN_3: [&str; 10] = [
-                "<<=", ">>=", "<=>", "||=", "&&=", "??=", "**=", "::=", "...", "|||",
-            ];
-            const ASSIGN_2: [&str; 34] = [
-                ":=", "?=", "+=", "-=", "=-", "=+", ".=", "=.", "*=", "/=", "%=", "&=", "|=",
-                "^=", "~=", "^^=", "==", "!=", "<=", ">=", "~~", "!~", "<>", "=:=", "=@", "&&",
-                "||", "=>", "->", "<-", "<~", "~>", "++", "--",
-            ];
-
-            if let Some(op) = ASSIGN_3.iter().find(|op| self.starts_with(op)) {
-                Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
-                let op_start = self.pos;
-                self.advance_bytes(op.len());
-                chunks.push(Chunk::<'a> {
-                    kind: ChunkKind::Assign,
-                    text: &self.text[op_start..self.pos],
-                    start: op_start,
-                    end: self.pos,
-                });
-                start = self.pos;
+            if let Some(op) = longest_match(rest, &ASSIGNMENTS)
+                .or_else(|| longest_match(rest, &MORE_ASSIGNMENTS))
+            {
+                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
+                let op_start = pos;
+                pos += op.len();
+                chunks.push(Chunk::new(
+                    ChunkKind::Assignment,
+                    &self.text[op_start..pos],
+                    op_start,
+                    pos,
+                ));
+                start = pos;
                 continue;
             }
 
-            if let Some(op) = ASSIGN_2.iter().find(|op| self.starts_with(op)) {
-                Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
-                let op_start = self.pos;
-                self.advance_bytes(op.len());
-                chunks.push(Chunk::<'a> {
-                    kind: ChunkKind::Assign,
-                    text: &self.text[op_start..self.pos],
-                    start: op_start,
-                    end: self.pos,
-                });
-                start = self.pos;
+            if rest.starts_with('=') {
+                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
+                chunks.push(Chunk::new(ChunkKind::Assignment, "=", pos, pos + 1));
+                pos += 1;
+                start = pos;
                 continue;
             }
 
-            if self.starts_with("=") {
-                Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
-                let op_start = self.pos;
-                self.advance_char();
-                chunks.push(Chunk::<'a> {
-                    kind: ChunkKind::Assign,
-                    text: &self.text[op_start..self.pos],
-                    start: op_start,
-                    end: self.pos,
-                });
-                start = self.pos;
+            if let Some(op) = longest_match(rest, &OPERATORS) {
+                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
+                let op_start = pos;
+                pos += op.len();
+                chunks.push(Chunk::new(
+                    ChunkKind::Operator,
+                    &self.text[op_start..pos],
+                    op_start,
+                    pos,
+                ));
+                start = pos;
                 continue;
             }
 
-            // Prüft das erste Zeichen auf Whitespace (ASCII-kompatibel)
-            if self.peek_char().is_some_and(|c| c.is_whitespace()) {
-                Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
-                let ws_start = self.pos;
-                while !self.eof() && self.peek_char().is_some_and(|c| c.is_whitespace()) {
-                    self.advance_char();
+            if rest.chars().next().is_some_and(char::is_whitespace) {
+                push_chunk(&mut chunks, ChunkKind::Code, self.text, start, pos);
+                let ws_start = pos;
+                while pos < self.text.len() {
+                    let rest = &self.text[pos..];
+                    let Some(ch) = rest.chars().next() else {
+                        break;
+                    };
+                    if !ch.is_whitespace() {
+                        break;
+                    }
+                    pos += ch.len_utf8();
                 }
-                chunks.push(Chunk::<'a> {
-                    kind: ChunkKind::Whitespace,
-                    text: &self.text[ws_start..self.pos],
-                    start: ws_start,
-                    end: self.pos,
-                });
-                start = self.pos;
+                chunks.push(Chunk::new(
+                    ChunkKind::Whitespace,
+                    &self.text[ws_start..pos],
+                    ws_start,
+                    pos,
+                ));
+                start = pos;
                 continue;
             }
 
-            // Alles andere wird als CODE-Teil konsumiert
-            self.advance_char();
+            pos += next_char_len(rest);
         }
 
-        if start < self.len {
-            if in_string {
-                chunks.push(Chunk {
-                    kind: ChunkKind::String,
-                    text: &self.text[start..self.len],
-                    start,
-                    end: self.len,
-                });
+        if start < self.text.len() {
+            let kind = if in_string {
+                ChunkKind::String
             } else {
-                Self::flush_code_chunk(&mut chunks, start, self.len, self.text);
-            }
+                ChunkKind::Code
+            };
+            push_chunk(&mut chunks, kind, self.text, start, self.text.len());
         }
 
         chunks
     }
 }
 
+fn next_char_len(text: &str) -> usize {
+    text.chars().next().map_or(0, char::len_utf8)
+}
+
+fn longest_match<'a>(text: &str, candidates: &'a [&str]) -> Option<&'a str> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|candidate| text.starts_with(candidate))
+        .max_by_key(|candidate| candidate.len())
+}
+
+fn push_chunk<'a>(
+    chunks: &mut Vec<Chunk<'a>>,
+    kind: ChunkKind,
+    text: &'a str,
+    start: usize,
+    end: usize,
+) {
+    if end > start {
+        chunks.push(Chunk::new(kind, &text[start..end], start, end));
+    }
+}
