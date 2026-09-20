@@ -59,11 +59,11 @@ impl<'a> QuoteLexer<'a> {
 
         while !self.eof() {
             if in_string {
-                if self.starts_with == "\\\"" {
+                if self.starts_with("\\\"") {
                     self.advance_bytes(2);
                     continue;
                 }
-                if self.starts_with == "\"" {
+                if self.starts_with("\"") {
                     self.advance_char();
                     chunks.push(Chunk {
                         kind: ChunkKind::String,
@@ -79,7 +79,7 @@ impl<'a> QuoteLexer<'a> {
                 continue;
             }
 
-            if self.starts_with == "\"" {
+            if self.starts_with("\"") {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                 in_string = true;
                 start = self.pos;
@@ -87,7 +87,9 @@ impl<'a> QuoteLexer<'a> {
                 continue;
             }
 
-            let next_3 = self.starts_with;
+            let next_3 = self.text[self.pos..]
+                .get(..3)
+                .unwrap_or("");
             match next_3 {
                 // 3-Zeichen-Operatoren
                 "<<=" | ">>=" | "<=>" | "||=" | "&&=" | "??=" | "**=" | "::=" | "..." | "|||" | "&&&" => {
@@ -106,7 +108,9 @@ impl<'a> QuoteLexer<'a> {
                 _ => {}
             }
 
-            let next_2 = self.starts_with;
+            let next_2 = self.text[self.pos..]
+                .get(..2)
+                .unwrap_or("");
             match next_2 {
                 // 2-Zeichen-Operatoren
                 ":=" | "?=" | "+=" | "-=" | "=-" | "=+" | ".=" | "=." |
@@ -129,7 +133,7 @@ impl<'a> QuoteLexer<'a> {
                 _ => {}
             }
 
-            if self.starts_with == "=" {
+            if self.starts_with("=") {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                 let op_start = self.pos;
                 self.advance_char();
@@ -144,10 +148,10 @@ impl<'a> QuoteLexer<'a> {
             }
 
             // Prüft das erste Zeichen auf Whitespace (ASCII-kompatibel)
-            if self.starts_with.chars().next().is_some_and(|c| c.is_whitespace()) {
+            if self.peek_char().is_some_and(|c| c.is_whitespace()) {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
                 let ws_start = self.pos;
-                while !self.eof() && self.starts_with.chars().next().is_some_and(|c| c.is_whitespace()) {
+                while !self.eof() && self.peek_char().is_some_and(|c| c.is_whitespace()) {
                     self.advance_char();
                 }
                 chunks.push(Chunk::<'a> {
