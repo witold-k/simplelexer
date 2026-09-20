@@ -18,7 +18,7 @@ use simplelexer::chunkkind::ChunkKind;
 use simplelexer::quotelexer::QuoteLexer;
 
 let lexer = QuoteLexer::new(r#"NAME = "value""#);
-let chunks = lexer.lex();
+let chunks = lexer.lex()?;
 
 assert_eq!(chunks[0].kind, ChunkKind::Code);
 assert_eq!(chunks[0].text, "NAME");
@@ -38,11 +38,13 @@ assert_eq!(chunks[4].kind, ChunkKind::String);
 
 ## API model
 
-`QuoteLexer` and `StringVarLexer` return borrowed `Chunk<'a>` values. This keeps lexing allocation-free for token text. Both lexers are reusable: calling `lex()` repeatedly returns the same result. `Chunk::start` / `Chunk::end` are UTF-8 byte offsets into the original input, including when `StringVarLexer` trims whitespace or matching outer quotes.
+`QuoteLexer::lex` and `StringVarLexer::lex` return `Result<Vec<Chunk<'a>>, LexError>` and reject malformed input. An unterminated quoted string or `${...}` expression is an error with a byte position into the original input.
+
+On success, both lexers return borrowed `Chunk<'a>` values. This keeps lexing allocation-free for token text. Both lexers are reusable: calling `lex()` repeatedly returns the same result. `Chunk::start` / `Chunk::end` are UTF-8 byte offsets into the original input, including when `StringVarLexer` trims whitespace or matching outer quotes.
 
 `ChunkKind::Assignment` is reserved for assignment forms; comparison, arrow, increment/decrement, and related recognized operators are reported as `ChunkKind::Operator`.
 
-`ChunkList` deliberately owns its `OwnedChunk` strings. Editing therefore does not impose source-text lifetimes on replacement values. Use `ChunkList::from_text` to create an editable representation and `ChunkList::chunks` for read-only chunk access.
+`ChunkList` deliberately owns its `OwnedChunk` strings. Editing therefore does not impose source-text lifetimes on replacement values. `ChunkList::from_text` is fallible for the same reason; use it to create an editable representation and `ChunkList::chunks` for read-only chunk access.
 
 `ChunkList::replace_value` returns `true` when an existing assignment was replaced and `false` when a new assignment had to be appended.
 
