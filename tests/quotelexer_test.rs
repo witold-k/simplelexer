@@ -7,12 +7,12 @@ use simplelexer::chunklist::ChunkList;
 use simplelexer::quotelexer::QuoteLexer;
 
 fn make_chunk_list(text: &str) -> ChunkList {
-    ChunkList::from_text(text)
+    ChunkList::from_text(text).unwrap()
 }
 
 fn lex(text: &str) -> Vec<Chunk<'_>> {
     let lexer = QuoteLexer::new(text);
-    lexer.lex()
+    lexer.lex().unwrap()
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn collect_combined_vars_remove() {
 
 #[test]
 fn replace_value_accepts_short_lived_input() {
-    let mut cl = ChunkList::from_text("name = \"old\"");
+    let mut cl = ChunkList::from_text("name = \"old\"").unwrap();
 
     {
         let value = String::from("\"new\"");
@@ -116,7 +116,7 @@ fn replace_value_accepts_short_lived_input() {
 
 #[test]
 fn replace_value_appends_missing_assignment() {
-    let mut cl = ChunkList::from_text("first = \"1\"");
+    let mut cl = ChunkList::from_text("first = \"1\"").unwrap();
     assert!(!cl.replace_value("second", "\"2\""));
 
     assert_eq!(cl.to_string(), "first = \"1\"\nsecond = \"2\"");
@@ -125,7 +125,7 @@ fn replace_value_appends_missing_assignment() {
 #[test]
 fn comparison_is_operator_not_assignment() {
     let lexer = QuoteLexer::new("left == right");
-    let chunks = lexer.lex();
+    let chunks = lexer.lex().unwrap();
 
     assert_eq!(chunks[2].kind, ChunkKind::Operator);
     assert_eq!(chunks[2].text, "==");
@@ -134,5 +134,16 @@ fn comparison_is_operator_not_assignment() {
 #[test]
 fn lex_is_repeatable() {
     let lexer = QuoteLexer::new("A = \"1\"");
-    assert_eq!(lexer.lex(), lexer.lex());
+    assert_eq!(lexer.lex().unwrap(), lexer.lex().unwrap());
+}
+
+#[test]
+fn unterminated_string_is_an_error() {
+    use simplelexer::error::LexErrorKind;
+
+    let lexer = QuoteLexer::new("name = \"unterminated");
+    let error = lexer.lex().unwrap_err();
+
+    assert_eq!(error.kind, LexErrorKind::UnterminatedString);
+    assert_eq!(error.position, 7);
 }
