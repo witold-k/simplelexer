@@ -60,7 +60,7 @@ impl ChunkList {
             self.append_assignment(name, value);
             return false;
         };
-        if self.chunks[assign_idx].kind != ChunkKind::Assign {
+        if self.chunks[assign_idx].kind != ChunkKind::Assignment {
             self.append_assignment(name, value);
             return false;
         }
@@ -91,7 +91,7 @@ impl ChunkList {
             let Some(assign_idx) = self.next_non_whitespace(index + 1) else {
                 continue;
             };
-            if self.chunks[assign_idx].kind != ChunkKind::Assign {
+            if self.chunks[assign_idx].kind != ChunkKind::Assignment {
                 continue;
             }
 
@@ -119,7 +119,7 @@ impl ChunkList {
             let Some(assign_idx) = self.next_non_whitespace(index + 1) else {
                 continue;
             };
-            if self.chunks[assign_idx].kind != ChunkKind::Assign {
+            if self.chunks[assign_idx].kind != ChunkKind::Assignment {
                 continue;
             }
 
@@ -183,7 +183,7 @@ impl ChunkList {
         self.chunks.extend([
             OwnedChunk::new(ChunkKind::Code, name),
             OwnedChunk::new(ChunkKind::Whitespace, " "),
-            OwnedChunk::new(ChunkKind::Assign, "="),
+            OwnedChunk::new(ChunkKind::Assignment, "="),
             OwnedChunk::new(ChunkKind::Whitespace, " "),
             OwnedChunk::new(ChunkKind::String, value),
         ]);
