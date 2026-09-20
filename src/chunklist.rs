@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::chunkkind::ChunkKind;
+use crate::error::Result;
 use crate::quotelexer::QuoteLexer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,15 +32,15 @@ impl ChunkList {
         Self::default()
     }
 
-    pub fn from_text(text: &str) -> Self {
-        let mut lexer = QuoteLexer::new(text);
+    pub fn from_text(text: &str) -> Result<Self> {
+        let lexer = QuoteLexer::new(text);
         let chunks = lexer
-            .lex()
+            .lex()?
             .into_iter()
             .map(|chunk| OwnedChunk::new(chunk.kind, chunk.text))
             .collect();
 
-        Self { chunks }
+        Ok(Self { chunks })
     }
 
     pub fn chunks(&self) -> &[OwnedChunk] {
