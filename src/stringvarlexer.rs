@@ -4,120 +4,103 @@
 use crate::chunk::Chunk;
 use crate::chunkkind::ChunkKind;
 
+#[derive(Debug, Clone, Copy)]
 pub struct StringVarLexer<'a> {
     text: &'a str,
-    pos: usize,
-    len: usize,
+    offset: usize,
 }
 
 impl<'a> StringVarLexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        // 1. strip() analog zu Python
-        let mut trimmed = input.trim();
+        let trimmed = input.trim();
+        let leading = input.len() - input.trim_start().len();
 
-        // 2. Umschließende Quotes entfernen ("..." oder '...')
-        if trimmed.len() >= 2 {
-            let bytes = trimmed.as_bytes();
-            let first = bytes[0];
-            let last = bytes[bytes.len() - 1];
+        let (text, offset) = if has_matching_outer_quotes(trimmed) {
+            (&trimmed[1..trimmed.len() - 1], leading + 1)
+        } else {
+            (trimmed, leading)
+        };
 
-            if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
-                trimmed = &trimmed[1..trimmed.len() - 1];
-            }
-        }
-
-        Self {
-            text: trimmed,
-            pos: 0,
-            len: trimmed.len(),
-        }
+        Self { text, offset }
     }
 
-    fn eof(&self) -> bool {
-        self.pos >= self.len
-    }
-
-    fn peek_char(&self) -> Option<char> {
-        self.text[self.pos..].chars().next()
-    }
-
-    fn starts_with(&self, value: &str) -> bool {
-        self.text[self.pos..].starts_with(value)
-    }
-
-    fn advance_char(&mut self) {
-        if let Some(ch) = self.peek_char() {
-            self.pos += ch.len_utf8();
-        }
-    }
-
-    fn advance_bytes(&mut self, n: usize) {
-        self.pos += n;
-    }
-
-    pub fn lex(&mut self) -> Vec<Chunk<'a>> {
+    pub fn lex(&self) -> Vec<Chunk<'a>> {
         let mut chunks = Vec::new();
+        let mut pos = 0;
 
-        while !self.eof() {
-            // 1. Whitespace verarbeiten
-            if self.peek_char().is_some_and(|c| c.is_whitespace()) {
-                let start = self.pos;
-                while !self.eof() && self.peek_char().is_some_and(|c| c.is_whitespace()) {
-                    self.advance_char();
+        while pos < self.text.len() {
+            let rest = &self.text[pos..];
+
+            if rest.chars().next().is_some_and(char::is_whitespace) {
+                let start = pos;
+                while pos < self.text.len() {
+                    let Some(ch) = self.text[pos..].chars().next() else {
+                        break;
+                    };
+                    if !ch.is_whitespace() {
+                        break;
+                    }
+                    pos += ch.len_utf8();
                 }
-                chunks.push(Chunk {
-                    kind: ChunkKind::Whitespace,
-                    text: &self.text[start..self.pos],
-                    start,
-                    end: self.pos,
-                });
+                chunks.push(self.chunk(ChunkKind::Whitespace, start, pos));
                 continue;
             }
 
-            // 2. BitBake Expression ${...} verschachtelt matchen
-            if self.starts_with("${") {
-                let start = self.pos;
-                self.advance_bytes(2);
-                let mut bracket_level = 1;
+            if rest.starts_with("${") {
+                let start = pos;
+                pos += 2;
+                let mut level = 1;
 
-                while !self.eof() && bracket_level > 0 {
-                    if self.starts_with("${") {
-                        bracket_level += 1;
-                        self.advance_bytes(2);
-                    } else if self.starts_with("}") {
-                        bracket_level -= 1;
-                        self.advance_char();
+                while pos < self.text.len() && level > 0 {
+                    let rest = &self.text[pos..];
+                    if rest.starts_with("${") {
+                        level += 1;
+                        pos += 2;
+                    } else if rest.starts_with('}') {
+                        level -= 1;
+                        pos += 1;
                     } else {
-                        self.advance_char();
+                        pos += rest.chars().next().map_or(0, char::len_utf8);
                     }
                 }
-                chunks.push(Chunk {
-                    kind: ChunkKind::String,
-                    text: &self.text[start..self.pos],
-                    start,
-                    end: self.pos,
-                });
+
+                chunks.push(self.chunk(ChunkKind::String, start, pos));
                 continue;
             }
 
-            // 3. Normale Wörter / Zeichen (Alles andere wird als STRING konsumiert)
-            let start = self.pos;
-            while !self.eof()
-                && !self.peek_char().is_some_and(|c| c.is_whitespace())
-                && !self.starts_with("${")
-            {
-                self.advance_char();
+            let start = pos;
+            while pos < self.text.len() {
+                let rest = &self.text[pos..];
+                if rest.starts_with("${")
+                    || rest.chars().next().is_some_and(char::is_whitespace)
+                {
+                    break;
+                }
+                pos += rest.chars().next().map_or(0, char::len_utf8);
             }
-            chunks.push(Chunk {
-                kind: ChunkKind::String,
-                text: &self.text[start..self.pos],
-                start,
-                end: self.pos,
-
-            });
+            chunks.push(self.chunk(ChunkKind::String, start, pos));
         }
 
         chunks
     }
+
+    fn chunk(&self, kind: ChunkKind, start: usize, end: usize) -> Chunk<'a> {
+        Chunk::new(
+            kind,
+            &self.text[start..end],
+            self.offset + start,
+            self.offset + end,
+        )
+    }
 }
 
+fn has_matching_outer_quotes(text: &str) -> bool {
+    let Some(first) = text.chars().next() else {
+        return false;
+    };
+    let Some(last) = text.chars().next_back() else {
+        return false;
+    };
+
+    text.len() >= 2 && matches!(first, '"' | '\'') && first == last
+}
