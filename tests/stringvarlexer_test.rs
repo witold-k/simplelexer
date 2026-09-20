@@ -61,3 +61,14 @@ fn unterminated_variable_expression_is_an_error() {
     assert_eq!(error.kind, LexErrorKind::UnterminatedVariableExpression);
     assert_eq!(error.position, 7);
 }
+
+#[test]
+fn unmatched_outer_quote_is_an_error() {
+    use simplelexer::error::LexErrorKind;
+
+    let lexer = StringVarLexer::new("  \"unterminated");
+    let error = lexer.lex().unwrap_err();
+
+    assert_eq!(error.kind, LexErrorKind::UnterminatedString);
+    assert_eq!(error.position, 2);
+}
