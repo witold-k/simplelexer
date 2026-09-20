@@ -87,50 +87,41 @@ impl<'a> QuoteLexer<'a> {
                 continue;
             }
 
-            let next_3 = self.text[self.pos..]
-                .get(..3)
-                .unwrap_or("");
-            match next_3 {
-                // 3-Zeichen-Operatoren
-                "<<=" | ">>=" | "<=>" | "||=" | "&&=" | "??=" | "**=" | "::=" | "..." | "|||" | "&&&" => {
+            const ASSIGN_3: [&str; 10] = [
+                "<<=", ">>=", "<=>", "||=", "&&=", "??=", "**=", "::=", "...", "|||",
+            ];
+            const ASSIGN_2: [&str; 30] = [
+                ":=", "?=", "+=", "-=", "=-", "=+", ".=", "=.", "*=", "/=", "%=", "&=", "|=",
+                "^=", "~=", "==", "!=", "<=", ">=", "~~", "!~", "<>", "&&", "||", "=>", "->",
+                "<-", "<~", "~>", "++",
+            ];
+
+            if let Some(op) = ASSIGN_3.iter().find(|op| self.starts_with(op)) {
                 Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
-                    let op_start = self.pos;
-                    self.advance_bytes(3);
-                    chunks.push(Chunk::<'a> {
-                        kind: ChunkKind::Assign,
-                        text: &self.text[op_start..self.pos],
-                        start: op_start,
-                        end: self.pos,
-                    });
-                    start = self.pos;
-                    continue;
-                }
-                _ => {}
+                let op_start = self.pos;
+                self.advance_bytes(op.len());
+                chunks.push(Chunk::<'a> {
+                    kind: ChunkKind::Assign,
+                    text: &self.text[op_start..self.pos],
+                    start: op_start,
+                    end: self.pos,
+                });
+                start = self.pos;
+                continue;
             }
 
-            let next_2 = self.text[self.pos..]
-                .get(..2)
-                .unwrap_or("");
-            match next_2 {
-                // 2-Zeichen-Operatoren
-                ":=" | "?=" | "+=" | "-=" | "=-" | "=+" | ".=" | "=." |
-                "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "~=" | "^^=" |
-                "==" | "!=" | "<=" | ">=" | "~~" | "!~" | "<>" | "=:=" | "=@" |
-                "&&" | "||" | "=>" | "->" | "<-" | "<~" | "~>" | "++" | "--" |
-                "**" | "::" | ".." => {
-                    Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
-                    let op_start = self.pos;
-                    self.advance_bytes(2);
-                    chunks.push(Chunk::<'a> {
-                        kind: ChunkKind::Assign,
-                        text: &self.text[op_start..self.pos],
-                        start: op_start,
-                        end: self.pos,
-                    });
-                    start = self.pos;
-                    continue;
-                }
-                _ => {}
+            if let Some(op) = ASSIGN_2.iter().find(|op| self.starts_with(op)) {
+                Self::flush_code_chunk(&mut chunks, start, self.pos, self.text);
+                let op_start = self.pos;
+                self.advance_bytes(op.len());
+                chunks.push(Chunk::<'a> {
+                    kind: ChunkKind::Assign,
+                    text: &self.text[op_start..self.pos],
+                    start: op_start,
+                    end: self.pos,
+                });
+                start = self.pos;
+                continue;
             }
 
             if self.starts_with("=") {
