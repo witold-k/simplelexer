@@ -9,7 +9,7 @@ The crate keeps slices into the original input instead of allocating token strin
 - `QuoteLexer` splits assignment-like text into code, whitespace, assignment operators, and quoted strings.
 - `StringVarLexer` splits string values while keeping nested `${...}` expressions intact.
 - `Chunk` stores token kind, source slice, and byte offsets.
-- `ChunkList` provides helpers for collecting and replacing simple variable assignments while preserving surrounding text.
+- `ChunkList` is an owning, editable representation for collecting and replacing simple variable assignments while preserving surrounding text.
 
 ## Example
 
@@ -28,18 +28,23 @@ assert_eq!(chunks[4].kind, ChunkKind::String);
 
 ## Design goals
 
-- Keep the public API small and predictable.
-- Preserve slices and byte offsets into the original input.
+- Keep the public API small and predictable after the current hardening pass.
+- Keep lexer output zero-copy and preserve byte offsets into the original input.
+- Keep editable `ChunkList` data owned so edits are independent of input lifetimes.
 - Avoid external runtime dependencies.
 - Handle UTF-8 input without slicing at invalid character boundaries.
 - Prefer explicit, simple lexer behavior over a general parser framework.
 - Consistent test layout: tests live under `tests/`, mirror the relative `src/` hierarchy where relevant, and use the source filename with a `_test.rs` suffix.
 
-## Stability
+## API model
 
-The existing lexer and chunk APIs are intended to remain stable. Bug fixes should preserve observable behavior unless the previous behavior was invalid or unsafe.
+`QuoteLexer` and `StringVarLexer` return borrowed `Chunk<'a>` values. This keeps lexing allocation-free for token text and makes `Chunk::start` / `Chunk::end` meaningful byte offsets into the original UTF-8 input.
 
-Byte offsets in `Chunk::start` and `Chunk::end` refer to UTF-8 byte offsets in the original input.
+`ChunkList` deliberately owns its `OwnedChunk` strings. Editing therefore does not impose source-text lifetimes on replacement values. Use `ChunkList::from_text` to create an editable representation and `ChunkList::chunks` for read-only chunk access.
+
+`ChunkList::replace_value` returns `true` when an existing assignment was replaced and `false` when a new assignment had to be appended.
+
+The intent of this hardening pass is to settle these ownership boundaries now so future users do not need an interface migration for ordinary editing.
 
 ## Development
 
