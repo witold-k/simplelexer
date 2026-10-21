@@ -6,7 +6,7 @@ The crate keeps slices into the original input instead of allocating token strin
 
 ## Components
 
-- `QuoteLexer` splits assignment-like text into code, whitespace, assignments, other recognized operators, and quoted strings.
+- `TokenLexer` splits text into code, whitespace, assignments, and operators, treating single and double quotes as ordinary operators.\n- `QuoteLexer` splits assignment-like text into code, whitespace, assignments, other recognized operators, and quoted strings.
 - `StringVarLexer` splits string values while keeping nested `${...}` expressions intact.
 - `Chunk` stores token kind, source slice, and UTF-8 byte offsets into the original lexer input.
 - `ChunkList` is an owning, editable representation for collecting and replacing simple variable assignments while preserving surrounding text.

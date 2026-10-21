@@ -7,3 +7,4 @@ pub mod chunklist;
 pub mod quotelexer;
 pub mod stringvarlexer;
 pub mod error;
+pub mod tokenlexer;
