@@ -163,7 +163,6 @@ pub(crate) fn lex_impl<'a>(text: &'a str, recognize_quotes: bool) -> Result<Vec<
     }
 
     Ok(chunks)
-    }
 }
 
 fn next_char_len(text: &str) -> usize {
