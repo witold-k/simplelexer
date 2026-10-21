@@ -46,7 +46,7 @@ pub(crate) fn lex_impl<'a>(text: &'a str, recognize_quotes: bool) -> Result<Vec<
                     pos += 2;
                     continue;
                 }
-                if recognize_quotes && rest.starts_with('"') {
+                if rest.starts_with('"') {
                     pos += 1;
                     chunks.push(Chunk::new(
                         ChunkKind::String,
@@ -63,7 +63,7 @@ pub(crate) fn lex_impl<'a>(text: &'a str, recognize_quotes: bool) -> Result<Vec<
                 continue;
             }
 
-            if rest.starts_with('"') {
+            if recognize_quotes && rest.starts_with('"') {
                 push_chunk(&mut chunks, ChunkKind::Code, text, start, pos);
                 in_string = true;
                 start = pos;
@@ -71,7 +71,7 @@ pub(crate) fn lex_impl<'a>(text: &'a str, recognize_quotes: bool) -> Result<Vec<
                 continue;
             }
 
-            if !recognize_quotes && matches!(rest.chars().next(), Some('"' | '\\'')) {
+            if !recognize_quotes && matches!(rest.chars().next(), Some('"' | '\'')) {
                 push_chunk(&mut chunks, ChunkKind::Code, text, start, pos);
                 chunks.push(Chunk::new(
                     ChunkKind::Operator,
