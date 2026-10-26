@@ -370,6 +370,94 @@ fn parse_html<'a>(source: &'a str, start: usize) -> Option<Table<'a>> {
 }
 
 
+/// A byte-range translation between a source row and its rendered text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowTextMapping {
+    pub source: std::ops::Range<usize>,
+    pub rendered: std::ops::Range<usize>,
+}
+
+/// A plain-text document view with explicit source-to-output row mappings.
+/// Parsing and syntax-specific text cleanup stay inside Simplelexer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NormalizedTableText {
+    pub text: String,
+    pub rows: Vec<RowTextMapping>,
+}
+
+/// Render recognized HTML tables into the historical line-oriented table
+/// representation, preserving non-table text. Markdown tables are unchanged.
+///
+/// The output is intended for consumers that need a textual view; the source
+/// structure and row spans remain authoritative for ownership decisions.
+pub fn normalize_table_text(source: &str) -> NormalizedTableText {
+    let mut text = String::with_capacity(source.len());
+    let mut rows = Vec::new();
+    let mut cursor = 0;
+    for chunk in MarkdownLexer::new(source).lex() {
+        let DocumentChunk::Table(table) = chunk else { continue };
+        if table.table_type != TableType::Html { continue; }
+        text.push_str(&source[cursor..table.span.start]);
+        for row in &table.rows {
+            if row.cells.is_empty() { continue; }
+            let cells: Vec<String> = row.cells.iter().map(|cell| {
+                cell.text
+                    .replace("<br/>", " ")
+                    .replace("<br>", " ")
+                    .replace("&nbsp;", " ")
+                    .replace("&amp;", "&")
+            }).collect();
+            let rendered_start = text.len();
+            if cells[0].trim().eq_ignore_ascii_case("Type") {
+                text.push_str("Type | Description | Parameters\n");
+            } else if cells[0].trim().len() <= 8
+                && cells[0].trim().chars().all(|c| c.is_ascii_alphanumeric())
+            {
+                text.push_str("Type: ");
+                text.push_str(cells[0].trim());
+                for cell in cells.iter().skip(1) {
+                    text.push_str(" | ");
+                    text.push_str(cell.trim());
+                }
+                text.push('\n');
+            } else {
+                text.push_str(&cells.join(" | "));
+                text.push('\n');
+            }
+            rows.push(RowTextMapping {
+                source: row.span.start..row.span.end,
+                rendered: rendered_start..text.len(),
+            });
+        }
+        cursor = table.span.end;
+    }
+    text.push_str(&source[cursor..]);
+    NormalizedTableText { text, rows }
+}
+
+#[cfg(test)]
+mod normalized_table_text_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_text_and_maps_rows() {
+        let source = "before\n<table><tr><td>Type</td><td>Description</td></tr><tr><td>q</td><td>alpha<br>beta</td></tr></table>\nafter";
+        let result = normalize_table_text(source);
+        assert_eq!(result.text, "before\nType | Description | Parameters\nType: q | alpha beta\n\nafter");
+        assert_eq!(result.rows.len(), 2);
+        assert_eq!(&source[result.rows[1].source.clone()], "<tr><td>q</td><td>alpha<br>beta</td></tr>");
+        assert_eq!(&result.text[result.rows[1].rendered.clone()], "Type: q | alpha beta\n");
+    }
+
+    #[test]
+    fn markdown_and_fenced_html_are_unchanged() {
+        let source = "| A | B |\n| --- | --- |\n| x | y |\n\n```html\n<table><tr><td>x</td></tr></table>\n```\n";
+        let result = normalize_table_text(source);
+        assert_eq!(result.text, source);
+        assert!(result.rows.is_empty());
+    }
+}
+
 /// A source-preserving, *observational* projection of a table onto a grid.
 /// No cells are inserted, rewritten, or inferred. A short row is a warning,
 /// not proof that the original HTML/PDF export was malformed.
