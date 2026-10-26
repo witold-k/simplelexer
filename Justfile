@@ -6,10 +6,15 @@ target_dir       := `cargo metadata --no-deps --format-version=1 | jq -r '.targe
 
 default: build
 
+pull:
+	git pull --prune --rebase github
+
 build:
-    cargo build
-    RUST_BACKTRACE=1 cargo test
-    cargo clippy
+	cargo build
+	RUST_BACKTRACE=1 cargo test
+	cargo clippy
+
+gbuild: pull build
 
 fix:
     @RUST_BACKTRACE=1 aifix -l rust -t fix_code -f {{current_dir}} -f {{current_dir}}/..

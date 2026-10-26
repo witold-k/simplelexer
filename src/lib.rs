@@ -8,3 +8,4 @@ pub mod quotelexer;
 pub mod stringvarlexer;
 pub mod error;
 pub mod tokenlexer;
+pub mod tablelexer;

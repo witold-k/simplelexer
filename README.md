@@ -6,8 +6,11 @@ The crate keeps slices into the original input instead of allocating token strin
 
 ## Components
 
-- `TokenLexer` splits text into code, whitespace, assignments, and operators, treating single and double quotes as ordinary operators.\n- `QuoteLexer` splits assignment-like text into code, whitespace, assignments, other recognized operators, and quoted strings.
+- `TokenLexer` splits text into code, whitespace, assignments, and operators, treating single and double quotes as ordinary operators.
+- `QuoteLexer` splits assignment-like text into code, whitespace, assignments, other recognized operators, and quoted strings.
 - `StringVarLexer` splits string values while keeping nested `${...}` expressions intact.
+- `MarkdownLexer` recognizes explicit Markdown and HTML tables while preserving their original source spans.
+- `DocumentAnalysis` provides document-wide headings, table grids, and structural observations.
 - `Chunk` stores token kind, source slice, and UTF-8 byte offsets into the original lexer input.
 - `ChunkList` is an owning, editable representation for collecting and replacing simple variable assignments while preserving surrounding text.
 
@@ -61,6 +64,40 @@ just
 This builds the crate, runs tests, and runs Clippy.
 
 GitHub Actions performs formatting, build, test, and Clippy checks on pushes and pull requests.
+
+## Markdown and HTML tables
+
+`MarkdownLexer` splits mixed Markdown documents into an ordered
+`Vec<DocumentChunk<'_>>`. Each entry is either `Text` or `Table`. A table
+contains its explicit `TableType` (`Markdown` or `Html`), original source slice,
+UTF-8 byte span, and rows with cells and individual byte spans.
+Markdown separator rows remain visible as `RowKind::Separator`; HTML cells
+preserve `rowspan`, `colspan`, and header-cell metadata.
+
+```rust
+use simplelexer::tablelexer::{DocumentChunk, MarkdownLexer, TableType};
+
+let source = "Before\n| Item | Value |\n| --- | --- |\n| A | 1 |\nAfter";
+let parts = MarkdownLexer::new(source).lex();
+assert_eq!(parts.iter().map(DocumentChunk::text).collect::<String>(), source);
+assert!(parts.iter().any(|part| matches!(
+    part, DocumentChunk::Table(t) if t.table_type == TableType::Markdown
+)));
+```
+
+The lexer recognizes **explicit** Markdown pipe tables and HTML
+`<table>` markup, but deliberately does **not** infer missing table structure
+from PDF-extracted prose. Inferred cell/row continuations belong to a
+separate structure-hypothesis stage. Markdown code fences are excluded from
+table recognition. HTML cell contents are preserved as source text (not
+entity-decoded). This is a lightweight structural lexer, not a complete
+CommonMark/HTML5 parser.
+
+`DocumentAnalysis::parse(source)` analyzes the complete input and records
+headings, table grid placements, and surrounding text spans. Its
+`structural_observations()` method exposes neighboring tables, intervening
+source ranges, heading spans, and logical cell coordinates for downstream
+analysis. These observations do not infer table identity or modify the source.
 
 ## License
 
