@@ -7,6 +7,13 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span { pub start: usize, pub end: usize }
 
+impl Span {
+    /// Whether this half-open byte range contains `offset`.
+    pub const fn contains(&self, offset: usize) -> bool {
+        self.start <= offset && offset < self.end
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableType { Markdown, Html }
 
@@ -672,6 +679,20 @@ impl<'a> DocumentAnalysis<'a> {
         Self { source, blocks, headings, tables }
     }
 
+    /// Find a row by its original source byte position, without guessing
+    /// whether adjacent or damaged rows belong to the same logical table.
+    pub fn source_row_at(&self, offset: usize) -> Option<(&Table<'a>, &TableRow<'a>)> {
+        self.tables.iter().find_map(|analysis| {
+            let table = self.table(analysis);
+            if !(table.span.contains(offset)) {
+                return None;
+            }
+            table.rows.iter()
+                .find(|row| row.span.contains(offset))
+                .map(|row| (table, row))
+        })
+    }
+
     pub fn table(&self, analysis: &DocumentTableAnalysis) -> &Table<'a> {
         match &self.blocks[analysis.block_index] {
             DocumentChunk::Table(table) => table,
@@ -737,5 +758,43 @@ impl DocumentAnalysis<'_> {
                 }).collect(),
             }
         }).collect()
+    }
+}
+
+#[cfg(test)]
+mod source_row_lookup_tests {
+    use super::*;
+
+    #[test]
+    fn span_contains_is_half_open() {
+        let span = Span { start: 4, end: 9 };
+        assert!(!span.contains(3));
+        assert!(span.contains(4));
+        assert!(span.contains(8));
+        assert!(!span.contains(9));
+        assert!(!(Span { start: 4, end: 4 }).contains(4));
+    }
+
+    #[test]
+    fn damaged_looking_content_is_not_repaired_or_reinterpreted() {
+        let source = "| Type Description | Parameters |\n| --- | --- |\n| t Reserved | |\n| r Reference frequency | 2 int frequency MHz |\n";
+        let analysis = DocumentAnalysis::parse(source);
+        assert_eq!(analysis.tables.len(), 1);
+        let offset = source.find("t Reserved").unwrap();
+        let (table, row) = analysis.source_row_at(offset).unwrap();
+        assert_eq!(table.table_type, TableType::Markdown);
+        assert_eq!(row.cells[0].text, "t Reserved");
+        assert_eq!(row.cells[1].text, "");
+        assert_eq!(row.cells[0].span.start, offset);
+        assert_eq!(normalize_table_text(source).text, source);
+    }
+
+    #[test]
+    fn lookup_never_infers_rows_in_prose_or_between_tables() {
+        let source = "| A | B |\n| --- | --- |\n| x | y |\n\nprose\n\n| C | D |\n| --- | --- |\n| u | v |\n";
+        let analysis = DocumentAnalysis::parse(source);
+        assert!(analysis.source_row_at(source.find("prose").unwrap()).is_none());
+        assert_eq!(analysis.source_row_at(source.find("| u | v |").unwrap()).unwrap().1.cells[0].text, "u");
+        assert!(analysis.source_row_at(source.len()).is_none());
     }
 }
