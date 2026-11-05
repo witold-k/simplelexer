@@ -39,6 +39,16 @@ assert_eq!(chunks[4].kind, ChunkKind::String);
 - Prefer explicit, simple lexer behavior over a general parser framework.
 - Consistent test layout: tests live under `tests/`, mirror the relative `src/` hierarchy where relevant, and use the source filename with a `_test.rs` suffix.
 
+## Test rules
+
+Follow the same source/test separation as in `aiagents`:
+
+- **All tests belong under `tests/`**, not in `src/`. Do not add `#[cfg(test)]` modules or test-only helpers to production source files.
+- Mirror the `src/` layout in `tests/` where relevant, naming test files `<source_name>_test.rs` (for example, `src/tablelexer.rs` → `tests/tablelexer_test.rs`).
+- **Dependencies are one-way: `tests → src`, never `src → tests`.** Production code must not import or depend on test code, fixtures, or test-only modules.
+- Exercise the public crate API from integration tests. If a behavior cannot be tested without exposing internal details, prefer testing observable behavior rather than introducing production dependencies on tests.
+- Run `just` (build, tests, Clippy) after changes; do not claim tests passed unless they were executed.
+
 ## API model
 
 `QuoteLexer::lex` and `StringVarLexer::lex` return `Result<Vec<Chunk<'a>>, LexError>` and reject malformed input. An unterminated quoted string or `${...}` expression is an error with a byte position into the original input.
