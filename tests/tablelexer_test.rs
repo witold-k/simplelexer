@@ -143,3 +143,52 @@ fn observations_preserve_full_gaps_and_cell_offsets() {
     let cell = second.cells[0].span;
     assert_eq!(&source[cell.start..cell.end], "Ende");
 }
+
+
+#[test]
+fn normalized_table_text_preserves_rows_and_mappings() {
+    use simplelexer::tablelexer::normalize_table_text;
+    let source = "before\n<table><tr><td>Type</td><td>Description</td></tr><tr><td>q</td><td>alpha<br>beta</td></tr></table>\nafter";
+    let result = normalize_table_text(source);
+    assert_eq!(result.text, "before\nType | Description | Parameters\nType: q | alpha beta\n\nafter");
+    assert_eq!(result.rows.len(), 2);
+    assert_eq!(&source[result.rows[1].source.clone()], "<tr><td>q</td><td>alpha<br>beta</td></tr>");
+    assert_eq!(&result.text[result.rows[1].rendered.clone()], "Type: q | alpha beta\n");
+}
+
+#[test]
+fn normalized_table_source_offsets_across_rewritten_tables() {
+    use simplelexer::tablelexer::normalize_table_text;
+    let source = "start\n<table><tr><td>Type</td><td>x</td></tr></table>\nmiddle\n<table><tr><td>q</td><td>y</td></tr></table>\nend";
+    let normalized = normalize_table_text(source);
+    assert_eq!(normalized.replacements.len(), 2);
+    for needle in ["start", "middle", "end"] {
+        assert_eq!(normalized.source_offset(normalized.text.find(needle).unwrap()), source.find(needle));
+    }
+    for mapping in &normalized.replacements {
+        assert_eq!(normalized.source_offset(mapping.rendered.start), None);
+        assert_eq!(normalized.source_offset(mapping.rendered.end), Some(mapping.source.end));
+    }
+    assert_eq!(normalized.source_offset(normalized.text.len()), Some(source.len()));
+    assert_eq!(normalized.source_offset(normalized.text.len() + 1), None);
+}
+
+#[test]
+fn normalized_table_source_offsets_preserve_markdown_and_utf8_boundaries() {
+    use simplelexer::tablelexer::normalize_table_text;
+    let source = "é\n| A | B |\n| --- | --- |\n| x | y |\n";
+    let normalized = normalize_table_text(source);
+    assert!(normalized.replacements.is_empty());
+    assert_eq!(normalized.source_offset(0), Some(0));
+    assert_eq!(normalized.source_offset(1), None);
+    assert_eq!(normalized.source_offset(source.find("| x").unwrap()), source.find("| x"));
+}
+
+#[test]
+fn normalized_table_text_preserves_markdown_and_fenced_html() {
+    use simplelexer::tablelexer::normalize_table_text;
+    let source = "| A | B |\n| --- | --- |\n| x | y |\n\n```html\n<table><tr><td>x</td></tr></table>\n```\n";
+    let result = normalize_table_text(source);
+    assert_eq!(result.text, source);
+    assert!(result.rows.is_empty());
+}
