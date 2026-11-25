@@ -732,6 +732,28 @@ impl<'a> DocumentAnalysis<'a> {
         Self { source, blocks, headings, tables }
     }
 
+    /// Active heading indices at a source byte offset, outermost first.
+    /// EOF and offsets beyond the document have no active heading path.
+    /// The path uses only headings recognized by the document lexer.
+    pub fn heading_path_at(&self, offset: usize) -> Vec<usize> {
+        if offset >= self.source.len() {
+            return Vec::new();
+        }
+        let mut path = Vec::new();
+        for (index, heading) in self.headings.iter().enumerate() {
+            if heading.span.start > offset {
+                break;
+            }
+            while path.last().is_some_and(|&last: &usize| {
+                self.headings[last].level >= heading.level
+            }) {
+                path.pop();
+            }
+            path.push(index);
+        }
+        path
+    }
+
     /// Find a row by its original source byte position, without guessing
     /// whether adjacent or damaged rows belong to the same logical table.
     pub fn source_row_at(&self, offset: usize) -> Option<(&Table<'a>, &TableRow<'a>)> {

@@ -41,7 +41,7 @@ assert_eq!(chunks[4].kind, ChunkKind::String);
 
 ## Test rules
 
-Follow the same source/test separation as in `aiagents`:
+Keep production code and tests separate:
 
 - **All tests belong under `tests/`**, not in `src/`. Do not add `#[cfg(test)]` modules or test-only helpers to production source files.
 - Mirror the `src/` layout in `tests/` where relevant, naming test files `<source_name>_test.rs` (for example, `src/tablelexer.rs` → `tests/tablelexer_test.rs`).
@@ -108,6 +108,20 @@ headings, table grid placements, and surrounding text spans. Its
 `structural_observations()` method exposes neighboring tables, intervening
 source ranges, heading spans, and logical cell coordinates for downstream
 analysis. These observations do not infer table identity or modify the source.
+
+### Structural queries
+
+`DocumentAnalysis::heading_path_at(offset)` returns indices into
+`headings`, ordered from outermost to innermost. Offsets are original
+UTF-8 byte positions; EOF and out-of-range offsets return an empty path.
+Headings inside recognized tables and fenced code are excluded.
+
+`TableGridAudit::cell_at(row, column)` queries existing placements using
+zero-based logical coordinates. `GridSlot` distinguishes origin, covered,
+missing and conflicting placements without interpreting cell contents or
+recomputing the grid.
+
+These APIs are independent of any downstream application.
 
 ## License
 

@@ -192,3 +192,18 @@ fn normalized_table_text_preserves_markdown_and_fenced_html() {
     assert_eq!(result.text, source);
     assert!(result.rows.is_empty());
 }
+
+#[test]
+fn heading_path_uses_recognized_source_headings() {
+    use simplelexer::tablelexer::DocumentAnalysis;
+    let source = "intro\n# First\n### Nested\nα text\n```\n# ignored\n```\n## Sibling\n| A | B |\n| --- | --- |\n| x | y |\n# Last\nend";
+    let analysis = DocumentAnalysis::parse(source);
+    assert_eq!(analysis.headings.len(), 4);
+    assert!(analysis.heading_path_at(0).is_empty());
+    assert_eq!(analysis.heading_path_at(source.find("α").unwrap()), vec![0, 1]);
+    assert_eq!(analysis.heading_path_at(source.find("# ignored").unwrap()), vec![0, 1]);
+    assert_eq!(analysis.heading_path_at(source.find("| x").unwrap()), vec![0, 2]);
+    assert_eq!(analysis.heading_path_at(source.find("# Last").unwrap()), vec![3]);
+    assert!(analysis.heading_path_at(source.len()).is_empty());
+    assert_eq!(analysis.heading_path_at(analysis.table(&analysis.tables[0]).span.start), analysis.tables[0].heading_indices);
+}
