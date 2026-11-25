@@ -502,6 +502,59 @@ pub struct GridIssue {
     pub expected_columns: usize,
 }
 
+/// Occupancy of a logical grid coordinate, independent of cell contents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridSlot<'a> {
+    Missing,
+    Origin(&'a GridPlacement),
+    Covered(&'a GridPlacement),
+    Conflict,
+}
+
+impl TableGridAudit {
+    /// Query existing placements without recomputing the grid.
+    /// Coordinates outside all placements return Missing.
+    pub fn cell_at(&self, row: usize, column: usize) -> GridSlot<'_> {
+        let mut matches = self.placements.iter().filter(|p| {
+            row >= p.row && row - p.row < p.rowspan
+                && column >= p.column && column - p.column < p.colspan
+        });
+        let Some(p) = matches.next() else {
+            return GridSlot::Missing;
+        };
+        if matches.next().is_some() {
+            return GridSlot::Conflict;
+        }
+        if row == p.row && column == p.column {
+            GridSlot::Origin(p)
+        } else {
+            GridSlot::Covered(p)
+        }
+    }
+}
+
+#[cfg(test)]
+mod grid_slot_tests {
+    use super::*;
+
+    #[test]
+    fn lookup_preserves_origin_and_span() {
+        let placement = GridPlacement {
+            row: 0, cell: 0, column: 0, rowspan: 2, colspan: 2,
+            span: Span { start: 5, end: 12 },
+        };
+        let mut grid = TableGridAudit {
+            width: 3, placements: vec![placement], issues: vec![],
+        };
+        assert_eq!(grid.cell_at(0, 0), GridSlot::Origin(&placement));
+        assert_eq!(grid.cell_at(1, 1), GridSlot::Covered(&placement));
+        assert_eq!(grid.cell_at(0, 2), GridSlot::Missing);
+        assert_eq!(grid.cell_at(usize::MAX, usize::MAX), GridSlot::Missing);
+        grid.placements.push(placement);
+        assert_eq!(grid.cell_at(1, 1), GridSlot::Conflict);
+    }
+}
+
 impl Table<'_> {
     /// Calculate logical column positions, honoring HTML rowspan/colspan.
     /// The original `Cell::column` and all source spans are left unchanged.
