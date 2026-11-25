@@ -126,3 +126,14 @@ These APIs are independent of any downstream application.
 ## License
 
 Apache-2.0.
+
+### Document ranges and buffered input
+
+`DocumentAnalysis::block_at` returns the existing text or table chunk at an
+original byte offset. `fence_at` and `fences` expose fenced code ranges,
+including delimiters; an unclosed fence extends to EOF. Ranges are half-open.
+
+`DocumentInput` accepts arbitrary byte chunks, including split UTF-8 code
+points. Its `finish` validates UTF-8 and returns the complete source for
+`DocumentAnalysis::parse`. This is buffered input, not online parsing;
+no second structural parser is introduced.

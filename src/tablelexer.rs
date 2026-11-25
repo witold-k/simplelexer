@@ -641,6 +641,7 @@ pub struct DocumentAnalysis<'a> {
     pub source: &'a str,
     pub blocks: Vec<DocumentChunk<'a>>,
     pub headings: Vec<DocumentHeading<'a>>,
+    pub fences: Vec<Span>,
     pub tables: Vec<DocumentTableAnalysis>,
 }
 
@@ -668,6 +669,8 @@ impl<'a> DocumentAnalysis<'a> {
     pub fn parse(source: &'a str) -> Self {
         let blocks = MarkdownLexer::new(source).lex();
         let mut headings = Vec::new();
+        let mut fences = Vec::new();
+        let mut fence_start = 0;
         // Headings are only recognized outside tables and fenced code.
         let mut fence: Option<(u8, usize)> = None;
         for block in &blocks {
@@ -682,9 +685,11 @@ impl<'a> DocumentAnalysis<'a> {
                         m == mark && n >= width && rest.is_empty()
                     }) {
                         fence = None;
+                        fences.push(Span { start: fence_start, end: offset + line.len() });
                     }
                 } else if let Some((mark, width, _)) = fence_marker(trimmed) {
                     fence = Some((mark, width));
+                    fence_start = offset;
                 } else if indent <= 3 {
                     let level = trimmed.bytes().take_while(|&b| b == b'#').count();
                     if (1..=6).contains(&level)
@@ -701,6 +706,9 @@ impl<'a> DocumentAnalysis<'a> {
                 }
                 offset += line.len();
             }
+        }
+        if fence.is_some() {
+            fences.push(Span { start: fence_start, end: source.len() });
         }
         let mut tables = Vec::new();
         for (block_index, block) in blocks.iter().enumerate() {
@@ -729,7 +737,7 @@ impl<'a> DocumentAnalysis<'a> {
                 grid: table.audit_grid(),
             });
         }
-        Self { source, blocks, headings, tables }
+        Self { source, blocks, headings, fences, tables }
     }
 
     /// Active heading indices at a source byte offset, outermost first.
@@ -752,6 +760,16 @@ impl<'a> DocumentAnalysis<'a> {
             path.push(index);
         }
         path
+    }
+
+    /// Find the original lexer chunk containing a byte offset.
+    pub fn block_at(&self, offset: usize) -> Option<&DocumentChunk<'a>> {
+        self.blocks.iter().find(|block| block.span().contains(offset))
+    }
+
+    /// Find a fenced code range, including its delimiters.
+    pub fn fence_at(&self, offset: usize) -> Option<Span> {
+        self.fences.iter().copied().find(|span| span.contains(offset))
     }
 
     /// Find a row by its original source byte position, without guessing
@@ -871,5 +889,22 @@ mod source_row_lookup_tests {
         assert!(analysis.source_row_at(source.find("prose").unwrap()).is_none());
         assert_eq!(analysis.source_row_at(source.find("| u | v |").unwrap()).unwrap().1.cells[0].text, "u");
         assert!(analysis.source_row_at(source.len()).is_none());
+    }
+}
+
+/// Buffered input for the whole-document lexer. Chunk boundaries are opaque.
+/// Parsing happens once, after input is complete; this is not an online parser.
+#[derive(Debug, Default)]
+pub struct DocumentInput {
+    bytes: Vec<u8>,
+}
+
+impl DocumentInput {
+    pub fn push_bytes(&mut self, bytes: &[u8]) {
+        self.bytes.extend_from_slice(bytes);
+    }
+
+    pub fn finish(self) -> Result<String, std::string::FromUtf8Error> {
+        String::from_utf8(self.bytes)
     }
 }

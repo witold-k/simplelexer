@@ -207,3 +207,25 @@ fn heading_path_uses_recognized_source_headings() {
     assert!(analysis.heading_path_at(source.len()).is_empty());
     assert_eq!(analysis.heading_path_at(analysis.table(&analysis.tables[0]).span.start), analysis.tables[0].heading_indices);
 }
+
+#[test]
+fn buffered_document_and_structural_ranges() {
+    use simplelexer::tablelexer::{DocumentAnalysis, DocumentInput, DocumentChunk};
+    let source = "# Heading\n~~~\nα | β\n~~~\n\n| A | B |\n| --- | --- |\n| x | y |\n";
+    let mut input = DocumentInput::default();
+    for byte in source.as_bytes() {
+        input.push_bytes(std::slice::from_ref(byte));
+    }
+    let text = input.finish().unwrap();
+    assert_eq!(text, source);
+    let analysis = DocumentAnalysis::parse(&text);
+    let span = analysis.fence_at(text.find("α").unwrap()).unwrap();
+    assert_eq!(&text[span.start..span.end], "~~~\nα | β\n~~~\n");
+    assert!(matches!(analysis.block_at(text.find("| x").unwrap()), Some(DocumentChunk::Table(_))));
+    assert!(analysis.block_at(text.len()).is_none());
+    let open = DocumentAnalysis::parse("```\nunfinished");
+    assert_eq!(open.fences[0].end, open.source.len());
+    let mut invalid = DocumentInput::default();
+    invalid.push_bytes(&[255]);
+    assert!(invalid.finish().is_err());
+}
